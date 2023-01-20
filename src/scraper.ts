@@ -1,4 +1,4 @@
-import axios from 'axios';
+import axios, { AxiosResponse } from 'axios';
 import { load } from 'cheerio';
 import { promisify } from 'util'
 import { logger } from './logger';
@@ -35,13 +35,16 @@ class Scraper {
             return;
         }
 
-        logger(`processing ${url}`);
+        logger.info(`processing ${url}`);
         this.visited.push(url);
 
         const response = await axios.get(`${this.domain}/${url}`)
-            .catch((reason) => logger(`failed to get ${url}: ${reason}`));
+            .catch((reason) => {
+                logger.error(`failed to get ${url}: ${reason}`);
+                return {} as AxiosResponse;
+            });
             
-        if(typeof response !== 'boolean' && response.status == 200) {
+        if(response.status == 200) {
             return load(response.data);
         }
 
@@ -81,7 +84,7 @@ class Scraper {
             .map((link) => link.href);
 
         const subpages = await this.scrapePages(paths, url);
-        logger(`    ${subpages.length} on ${referer}/${url}`);
+        logger.debug(`    ${subpages.length} on ${referer}/${url}`);
 
         return links.concat(subpages);
     }
