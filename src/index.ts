@@ -2,9 +2,16 @@ import fs from 'fs'
 import { uniq } from 'underscore'
 import { scraper } from './scraper';
 
-scraper(process.argv.splice(-1)[0]).then(result => {
+
+const getFilename = (url: string) => 
+    url.replace(/http[s]?:\/\//, '').replace('/', '_');
+
+const domain = process.argv.splice(-1)[0];
+const filename = getFilename(domain);
+
+scraper(domain).then(result => {
     const content = uniq(result, link => link.href)
-        .map((link) => `${link.path};${link.page};${link.text};${link.href};${link.external}`)
+        .map((link) => Object.values(link).join(';'))
         .join('\n');
-    fs.writeFile('result.csv', `path;page;link;href;external\n${content}`, (err) => console.error(err));
+    fs.writeFile(`${filename}.csv`, `path;page;link;href;external;status\n${content}`, (err) => console.error(err));
 });

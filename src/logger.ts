@@ -11,7 +11,8 @@ export const logger = createLogger({
     transports: [
         new transports.File({
             filename: 'result.log',
-            format: custom
+            format: custom,
+            options: { flags: 'w' }
         })
     ]
 })
