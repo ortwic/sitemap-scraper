@@ -3,4 +3,5 @@
 Scraper for static HTML sites which exports its link into csv file.
 
 Usage: 
-`npm run start https://example.com`
+`npm run start -- [-s] https://example.com`
+`-s  check http status of external urls with fetch api (experimental)`
