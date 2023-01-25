@@ -2,6 +2,7 @@ import axios, { AxiosResponse } from 'axios';
 import { load } from 'cheerio';
 import { promisify } from 'util'
 import { logger } from './logger';
+import { isExternal, skipPage, withProtocol } from './utils/helper';
 
 const sleep = promisify(setTimeout);
 
@@ -10,11 +11,9 @@ export const scraper = (config: Config) => new Scraper(config).scrapePages([''],
 class Scraper {
     private visited: string[] = [];
     private checked: Record<string, any> = {};
-    private protocol = new RegExp(/http[s]?:\/\//);
-    private domainExpr: RegExp;
+    private domain: URL = new URL(this.config.domain);
 
     constructor(private config: Config) {
-        this.domainExpr = new RegExp(`${this.protocol}${config.domain.replace(this.protocol, '')}`);
     }
 
     public async scrapePages(urls: string[], referer: string): Promise<Item[]> {
@@ -33,11 +32,15 @@ class Scraper {
         logger.info(`processing ${url}`);
         this.visited.push(url);
 
-        return await axios.get(`${this.config.domain}/${url}`)
+        return await axios.get(this.pathToUrl(url))
             .catch((reason) => {
                 logger.error(`failed to get ${url}: ${reason}`);
                 return { statusText: reason } as AxiosResponse;
             });
+    }
+
+    private pathToUrl = (url: string): string => {
+        return withProtocol(url) ? url : `${this.domain.href}/${url}`;
     }
 
     private async parsePage(data: string, url: string, referer: string): Promise<Item[]> {
@@ -47,19 +50,16 @@ class Scraper {
             const $a = $html(element);
             const href = $a.attr('href');
             const url = href?.replace(/\.\.\//g, '')
-                ?.replace(this.config.domain, '')
+                // ?.replace(this.domain.href, '')
                 ?.trim();
-            const external = url !== undefined && (url.startsWith('http://') 
-                || url.startsWith('https://')
-                || url.startsWith('www.'));
             const item: Item = {
                 path: referer,
                 page: title,
                 text: $a.text().trim().replace(/(\n|\t)+/, ' '),
                 href: url ?? '',
-                external,
+                external: isExternal(this.domain, url),
             };
-            if (this.config.checkStatus && url && external) {
+            if (this.config.checkStatus && url && item.external) {
                 if (href != url) {
                     logger.debug(`${href} to ${url}`);
                 }
@@ -78,18 +78,22 @@ class Scraper {
             }
         }).get());
 
-        const paths = links.filter((link) => !this.skipPage(link))
-            .map((link) => link.href);
+        if (this.config.recursive) {
+            const paths = links.filter((link) => !skipPage(link))
+                .map((link) => link.href);
 
-        const subpages = await this.scrapePages(paths, url);
-        logger.debug(`    ${subpages.length} pages on '${referer}/${url}'`);
+            const subpages = await this.scrapePages(paths, url);
+            logger.debug(`    ${subpages.length} pages on '${referer}/${url}'`);
 
-        return links.concat(subpages);
+            return links.concat(subpages);
+        }
+
+        return links;
     }
 
     private async checkStatus(url: string) {
         const preflight = {
-            Origin: this.config.domain,
+            Origin: this.domain.href,
             'Access-Control-Request-Method': 'GET',
             'Access-Control-Request-Headers': 'X-Custom-Header'
         };
@@ -110,10 +114,6 @@ class Scraper {
             return reason;
         }
     }
-
-    private skipPage = (link: Item) => link.href && (link.external 
-        || link.href.startsWith('#')
-        || link.href.startsWith('../'));
 
     private wasVisited = (url: string) => this.visited.some((u) => u == url);
 }
