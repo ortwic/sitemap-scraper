@@ -1,4 +1,5 @@
 import axios, { AxiosResponse } from 'axios';
+import { inspect } from 'util';
 import { load } from 'cheerio';
 import { promisify } from 'util'
 import { logger } from './logger';
@@ -49,9 +50,7 @@ class Scraper {
         const links: Item[] = await Promise.all($html('a').map(async (_, element) => {
             const $a = $html(element);
             const href = $a.attr('href');
-            const url = href?.replace(/\.\.\//g, '')
-                // ?.replace(this.domain.href, '')
-                ?.trim();
+            const url = href?.replace(/\.\.\//g, '')?.trim();
             const item: Item = {
                 path: referer,
                 page: title,
@@ -101,17 +100,25 @@ class Scraper {
             return this.checked[url];
         }
 
-        logger.debug(`   check ${url} ...`)
         try {
-            const response = await fetch(url.replace('www.', 'http://www.'), {
+            const target = new URL(url.replace(/^www\./, 'http://www.'));
+            logger.debug(`   check ${target}`)
+            const response = await fetch(target, {
                 // headers: preflight
             });
             this.checked[url] = response;
             return response.statusText;
         } catch ({ cause }) {
-            const reason = JSON.stringify(cause);
-            logger.error(`failed to get ${url}: ${reason}`);
-            return reason;
+            logger.error(`failed to get ${url}: ${inspect(cause)}`);
+            if (cause instanceof Response) {
+                return cause.statusText;
+            } else {
+                try {
+                    return JSON.stringify(cause);
+                } catch {
+                    return Object.values(cause as any).join(', ');
+                }
+            }
         }
     }
 
